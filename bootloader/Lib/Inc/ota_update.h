@@ -30,6 +30,7 @@ index: [0] [1] [2-3] [4 - 3 + size] [4 + size] [5 + size]
 [1a(0)] [31(1)] [1(2-3)] [0(4)] [0(5)] [F3(7)]
 [1a(0)] [31(1)] [04(2-3)] [11(4), 22,(5), 33(6), 44(7)] [CRC(8)] [F3(9)]
 */
+//Possible Data Type(Payload Type) being sent from firmware_uploader
 typedef enum 
 {
 	OTA_DATA_TYPE_START_DATA = 0x31,
@@ -42,7 +43,7 @@ typedef enum
 	OTA_OK,
 	OTA_ERR
 } OTA_Status_t;
-
+//Data Frame Struct
 typedef struct 
 {
 	uint8_t sof;
@@ -52,7 +53,12 @@ typedef struct
 	uint8_t crc;
 	uint8_t eof;
 }OTA_DataFrame_t;
-
+/**
+ * @brief Erases flash, downloads the firmware from uploader, and writes it to flash memory
+ * 
+ * @param app_addr [ @ref APP_SLOT_ADDR ]Flash Address to write firmware to
+ * @return OTA_Status_t 
+ */
 OTA_Status_t ota_download_and_flash(uint32_t app_addr);
 
 #endif //eof OTA_UPDATE_H_
