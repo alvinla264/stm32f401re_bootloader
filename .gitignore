@@ -1,0 +1,9 @@
+bootloader/build/
+python_firmware_upload_script/.venv/
+bootloader/.vscode/
+bootloader/build.ninja
+bootloader/CMakeFiles/
+bootloader/CMakeCache.txt
+bootloader/cmake_install.cmake
+bootloader/compile_commands.json
+
