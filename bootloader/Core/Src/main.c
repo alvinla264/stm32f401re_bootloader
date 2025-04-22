@@ -111,14 +111,14 @@ int main(void)
 	printf("Starting Bootloader v%d.%d\r\n", BL_Version[0], BL_Version[1]);
 	uint8_t rcv_buff = 0;
 	Flash_Config_t curr_config = {0};
-	//Gets the current configuration stored in the Flash Memory
+	// Gets the current configuration stored in the Flash Memory
 	if (Flash_GetConfig(&curr_config) != FLASH_APP_OK)
 	{
 		printf("Error getting current config from flash\r\n");
 		Error_Handler();
 	}
-	//When Full Flash Erase the value in the Flash should be 0xFFFFFFFF
-	//Anything else means someone could've changed the value
+	// When Full Flash Erase the value in the Flash should be 0xFFFFFFFF
+	// Anything else means someone could've changed the value
 	if (curr_config.first_boot != FIRST_BOOT_FALSE && curr_config.first_boot != FIRST_BOOT_TRUE)
 	{
 		// Possible Tamper detected??
@@ -126,24 +126,24 @@ int main(void)
 		printf("Unknown first boot\r\n");
 		curr_config.first_boot = FIRST_BOOT_TRUE;
 	}
-	//When application is running and needs to go back into
-	//boot mode for new firmware, this flag can be set
-	//in the RTC backup register and then do a software reset
+	// When application is running and needs to go back into
+	// boot mode for new firmware, this flag can be set
+	// in the RTC backup register and then do a software reset
 	uint8_t firmware_flag_set = RTC->BKP0R & 0x01;
-	//Checks for normal boot and waits for any UART commands being sent
+	// Checks for normal boot and waits for any UART commands being sent
 	if (curr_config.first_boot == FIRST_BOOT_FALSE && !firmware_flag_set)
 	{
 		printf("Listening for UART Commands\r\n");
 		HAL_UART_Receive(&huart2, &rcv_buff, 1, 3000);
 	}
-	//Firmware update mode
+	// Firmware update mode
 	if (firmware_flag_set || rcv_buff == NEW_FIRMWARE || curr_config.first_boot == FIRST_BOOT_TRUE)
 	{
 		if (curr_config.first_boot == FIRST_BOOT_TRUE)
 		{
 			printf("First Boot Detected\r\n");
 		}
-		//clears the application firmware_flag
+		// clears the application firmware_flag
 		if (firmware_flag_set)
 		{
 			printf("New Firmware Flag Set\r\n");
@@ -152,7 +152,7 @@ int main(void)
 			PWR->CR &= ~PWR_CR_DBP;
 		}
 		printf("Starting firmware download\r\n");
-		//in case invalid address memory in Flash Config, set to SLOT0
+		// in case invalid address memory in Flash Config, set to SLOT0
 		if (curr_config.curr_app_slot != APP_SLOT0_ADDR && curr_config.curr_app_slot != APP_SLOT1_ADDR)
 			curr_config.curr_app_slot = APP_SLOT1_ADDR;
 		uint32_t new_app_addr = (curr_config.first_boot == FIRST_BOOT_TRUE)		? APP_SLOT0_ADDR
@@ -161,41 +161,48 @@ int main(void)
 		if (new_app_addr == APP_SLOT0_ADDR)
 		{
 			printf("Writing to Slot0\r\n");
+			curr_config.slot_status_flag |= SLOT_STATUS_FLAG_SLOT0;
 		}
 		else
 		{
 			printf("Writing to Slot1\r\n");
+			curr_config.slot_status_flag |= SLOT_STATUS_FLAG_SLOT1;
 		}
-		//downloads and flash the firmware
+		// downloads and flash the firmware
 		if (ota_download_and_flash(new_app_addr) != OTA_OK)
 		{
 			printf("OTA Update: ERROR!!\r\n");
-			printf("Rebooting and running previous Application\r\n");
+			if (Flash_WriteConfig(curr_config) != FLASH_APP_OK)
+			{
+				printf("Error setting invalid status flag\r\n");
+				Error_Handler();
+			}
+			printf("Rebooting and running previous firmware\r\n");
 			HAL_NVIC_SystemReset();
 		}
 		else
 		{
-			//if sucessful calculate CRC using STM32 CRC peripheral
+			// if sucessful calculate CRC using STM32 CRC peripheral
 			uint8_t crc_value = 0;
 			if (Flash_CalculateCRC(new_app_addr, &crc_value) != FLASH_APP_OK)
 			{
 				printf("Invalid Address for CRC Calculation\r\n");
 				Error_Handler();
 			}
-			//sets new configuration
+			// sets new configuration
 			curr_config.curr_app_slot = new_app_addr;
 			curr_config.first_boot = FIRST_BOOT_FALSE;
-			// TODO: CALCULATE CRC
-
 			if (new_app_addr == APP_SLOT0_ADDR)
 			{
 				curr_config.slot0_crc = crc_value;
+				curr_config.slot_status_flag &= ~SLOT_STATUS_FLAG_SLOT0;
 			}
 			else
 			{
 				curr_config.slot1_crc = crc_value;
+				curr_config.slot_status_flag &= ~SLOT_STATUS_FLAG_SLOT1;
 			}
-			//writes new config into the FLASH memory
+			// writes new config into the FLASH memory
 			if (Flash_WriteConfig(curr_config) != FLASH_APP_OK)
 			{
 				printf("Error writing new config\r\n");
@@ -205,12 +212,12 @@ int main(void)
 			HAL_NVIC_SystemReset();
 		}
 	}
-	//in case invalid memory stored in FLASH
+	// in case invalid memory stored in FLASH
 	if (curr_config.curr_app_slot != APP_SLOT0_ADDR && curr_config.curr_app_slot != APP_SLOT1_ADDR)
 	{
 		curr_config.curr_app_slot = APP_SLOT0_ADDR;
 	}
-	//CRC tamper detection
+	// CRC tamper detection
 	uint8_t slot_crc = 0;
 	if (curr_config.curr_app_slot == APP_SLOT0_ADDR)
 	{
@@ -221,26 +228,51 @@ int main(void)
 		slot_crc = curr_config.slot1_crc;
 	}
 	uint8_t crc = 0;
-	//Calculates Flash Appliction SLOT CRC for tamper detection
+	// Calculates Flash Appliction SLOT CRC for tamper detection
 	if (Flash_CalculateCRC(curr_config.curr_app_slot, &crc) != FLASH_APP_OK)
 	{
 		printf("Invalid Address for CRC Calculation\r\n");
 		Error_Handler();
 	}
-	//compares calculated CRC to stored CRC
+	// compares calculated CRC to stored CRC
 	if (crc != slot_crc)
 	{
 		printf("TAMPER DETECTED!!!\r\n");
 		if (curr_config.curr_app_slot == APP_SLOT0_ADDR)
 		{
+			curr_config.slot_status_flag |= (SLOT_STATUS_FLAG_SLOT0);
 			printf("Slot 0 CRC does not match calculated CRC\r\n");
 		}
 		else
 		{
+			curr_config.slot_status_flag |= (SLOT_STATUS_FLAG_SLOT1);
 			printf("Slot 1 CRC does not match calculated CRC\r\n");
 		}
-		//TODO: Change Error Handler to find previous valid SLOT #
-		Error_Handler();
+		if ((curr_config.slot_status_flag & SLOT_STATUS_FLAG_SLOT0) == SLOT_STATUS_FLAG_VALID)
+		{
+			curr_config.curr_app_slot = APP_SLOT0_ADDR;
+			printf("Slot0 may contain valid firmware\r\n");
+			printf("Setting Slot0 as main firmware\r\n");
+		}
+		else if ((curr_config.slot_status_flag & SLOT_STATUS_FLAG_SLOT1) == SLOT_STATUS_FLAG_VALID)
+		{
+			curr_config.curr_app_slot = APP_SLOT1_ADDR;
+			printf("Slot1 may contain valid firmware\r\n");
+			printf("Setting Slot1 as main firmware\r\n");
+		}
+		else
+		{
+			printf("No valid firmware found in either Slot#\r\n");
+			printf("Turning on First Boot Mode to receive firmware\r\n");
+			curr_config.first_boot = FIRST_BOOT_TRUE;
+		}
+		if (Flash_WriteConfig(curr_config) != FLASH_APP_OK)
+		{
+			printf("Error writing new config\r\n");
+			Error_Handler();
+		}
+		printf("Restarting System\r\n");
+		HAL_NVIC_SystemReset();
 	}
 	goto_application(curr_config.curr_app_slot);
 	/* USER CODE END 2 */
@@ -376,11 +408,11 @@ static void goto_application(uint32_t app_base_addr)
 {
 	if (app_base_addr == APP_SLOT0_ADDR)
 	{
-		printf("Going to SLOT0 application\r\n");
+		printf("Going to Slot0 firmware\r\n");
 	}
 	else
 	{
-		printf("Going to SLOT1 application\r\n");
+		printf("Going to Slot1 firmware\r\n");
 	}
 	void (*app_handler)(void) = (void (*)(void))(*(volatile uint32_t *)(app_base_addr + 4));
 
