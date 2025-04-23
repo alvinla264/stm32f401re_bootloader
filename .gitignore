@@ -6,4 +6,6 @@ bootloader/CMakeFiles/
 bootloader/CMakeCache.txt
 bootloader/cmake_install.cmake
 bootloader/compile_commands.json
+stm32f401re_bootloader_workspace.code-workspace
+
 
