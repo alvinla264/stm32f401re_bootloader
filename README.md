@@ -52,3 +52,24 @@ A custom bootloader for the STM32F401RE (Nucleo board) that enables firmware upd
 ## 📝 TODO
 - Implement OTA firmware via Bluetooth
 - Support encrypted firmware uploads
+
+# 🐍 Python Firmware Upload Script
+
+A python script to upload firmware to the NucleoF401re bootloader
+
+CLI Args
+- -f filepath to bin file (Required)
+- -p com Port to uart communication (Optional)
+- -b baudrate default: 115200 (Optional)
+---
+
+## 🛠️ Requirements
+
+- Python 3.x
+- PySerial
+
+--- 
+
+## ⚙️ Building
+- .venv/Scripts/activate
+- python firmware_upload.py -f BIN_FILEPATH -b BAUDRATE -p COM_PORT
