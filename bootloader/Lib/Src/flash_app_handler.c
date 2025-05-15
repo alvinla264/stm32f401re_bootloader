@@ -9,8 +9,6 @@ Flash_Status_t Flash_GetConfig(Flash_Config_t *app_config)
 	app_config->first_boot = APP_CONFIG->first_boot;
 	app_config->slot0_crc = APP_CONFIG->slot0_crc;
 	app_config->slot1_crc = APP_CONFIG->slot1_crc;
-	app_config->slot_status_flag = APP_CONFIG->slot_status_flag;
-	app_config->curr_app_slot = APP_CONFIG->curr_app_slot;
 	return FLASH_APP_OK;
 }
 
@@ -24,17 +22,10 @@ Flash_Status_t Flash_WriteConfig(Flash_Config_t new_config)
 	if (HAL_FLASH_Unlock() != HAL_OK)
 		return FLASH_APP_ERR;
 	// Stores the config in 32bit variable to write to Flash to keep things aligned
-	uint32_t data = new_config.slot_status_flag << 24 | new_config.slot1_crc << 16 | new_config.slot0_crc << 8 |
-					new_config.first_boot;
+	uint32_t data =
+		new_config.unused << 24 | new_config.slot1_crc << 16 | new_config.slot0_crc << 8 | new_config.first_boot;
 	// writes data to flash memory
 	if (HAL_FLASH_Program(FLASH_TYPEPROGRAM_WORD, APP_CONFIG_ADDR, data))
-	{
-		HAL_FLASH_Lock();
-		printf("Error Writing New Config\r\n");
-		return FLASH_APP_ERR;
-	}
-	// writes the app slot to flash config memory
-	if (HAL_FLASH_Program(FLASH_TYPEPROGRAM_WORD, APP_CONFIG_ADDR + 0x04, new_config.curr_app_slot))
 	{
 		HAL_FLASH_Lock();
 		printf("Error Writing New Config\r\n");
@@ -98,6 +89,33 @@ Flash_Status_t Flash_WriteData(uint32_t app_base_addr, uint8_t *data, uint16_t d
 	return FLASH_APP_OK;
 }
 
+Flash_Status_t Flash_CopySector(uint32_t src_addr, uint32_t dest_addr)
+{
+	if ((src_addr != MAIN_APP_SLOT_ADDR && src_addr != BCKUP_APP_SLOT_ADDR) ||
+		(dest_addr != MAIN_APP_SLOT_ADDR && dest_addr != BCKUP_APP_SLOT_ADDR))
+		return FLASH_APP_ERR;
+	if (Flash_EraseSector(Flash_GetSector(dest_addr), FLASH_VOLTAGE_RANGE_3) != FLASH_APP_OK)
+	{
+		printf("Error erasing app config flash\r\n");
+		return FLASH_APP_ERR;
+	}
+	if (HAL_FLASH_Unlock() != HAL_OK)
+		return FLASH_APP_ERR;
+	volatile uint32_t *src_addr_curr = (volatile uint32_t *)src_addr;
+	volatile uint32_t *src_addr_end = (volatile uint32_t *)(src_addr + APP_FLASH_SECTOR_SIZE);
+	volatile uint32_t *dest_addr_curr = (volatile uint32_t *)dest_addr;
+	while (src_addr_curr < src_addr_end)
+	{
+		if (HAL_FLASH_Program(FLASH_TYPEPROGRAM_WORD, (uint32_t)dest_addr_curr++, *src_addr_curr++) != HAL_OK)
+		{
+			HAL_FLASH_Lock();
+			return FLASH_APP_ERR;
+		}
+	}
+	HAL_FLASH_Lock();
+	return FLASH_APP_OK;
+}
+
 Flash_Status_t Flash_CalculateCRC(uint32_t flash_addr, uint8_t *calculated_crc)
 {
 	if (!Flash_ValidFlashAppMem(flash_addr) || calculated_crc == NULL)
@@ -123,7 +141,7 @@ Flash_Status_t Flash_CalculateCRC(uint32_t flash_addr, uint8_t *calculated_crc)
 
 uint8_t Flash_GetSector(uint32_t flash_addr)
 {
-	if (flash_addr == APP_SLOT1_ADDR)
+	if (flash_addr == BCKUP_APP_SLOT_ADDR)
 		return APP_SLOT1_FLASH_SECTOR;
 	else
 		return APP_SLOT0_FLASH_SECTOR;
@@ -131,7 +149,7 @@ uint8_t Flash_GetSector(uint32_t flash_addr)
 
 uint8_t Flash_ValidFlashAppMem(uint32_t flash_addr)
 {
-	if (flash_addr == APP_SLOT0_ADDR || flash_addr == APP_SLOT1_ADDR)
+	if (flash_addr == MAIN_APP_SLOT_ADDR || flash_addr == BCKUP_APP_SLOT_ADDR)
 		return 1;
 	else
 		return 0;

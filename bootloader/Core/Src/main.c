@@ -153,21 +153,8 @@ int main(void)
 		}
 		printf("Starting firmware download\r\n");
 		// in case invalid address memory in Flash Config, set to SLOT0
-		if (curr_config.curr_app_slot != APP_SLOT0_ADDR && curr_config.curr_app_slot != APP_SLOT1_ADDR)
-			curr_config.curr_app_slot = APP_SLOT1_ADDR;
-		uint32_t new_app_addr = (curr_config.first_boot == FIRST_BOOT_TRUE)		? APP_SLOT0_ADDR
-								: (curr_config.curr_app_slot == APP_SLOT0_ADDR) ? APP_SLOT1_ADDR
-																				: APP_SLOT0_ADDR;
-		if (new_app_addr == APP_SLOT0_ADDR)
-		{
-			printf("Writing to Slot0\r\n");
-			curr_config.slot_status_flag |= SLOT_STATUS_FLAG_SLOT0;
-		}
-		else
-		{
-			printf("Writing to Slot1\r\n");
-			curr_config.slot_status_flag |= SLOT_STATUS_FLAG_SLOT1;
-		}
+		uint32_t new_app_addr = MAIN_APP_SLOT_ADDR;
+		printf("Writing to Main Application Slot\r\n");
 		// downloads and flash the firmware
 		if (ota_download_and_flash(new_app_addr) != OTA_OK)
 		{
@@ -190,17 +177,24 @@ int main(void)
 				Error_Handler();
 			}
 			// sets new configuration
-			curr_config.curr_app_slot = new_app_addr;
 			curr_config.first_boot = FIRST_BOOT_FALSE;
-			if (new_app_addr == APP_SLOT0_ADDR)
+			curr_config.slot0_crc = crc_value;
+			if (Flash_CopySector(MAIN_APP_SLOT_ADDR, BCKUP_APP_SLOT_ADDR) != FLASH_APP_OK)
 			{
-				curr_config.slot0_crc = crc_value;
-				curr_config.slot_status_flag &= ~SLOT_STATUS_FLAG_SLOT0;
+				printf("Error copying new firmware to backup\r\n");
+				Error_Handler();
 			}
+			if (Flash_CalculateCRC(BCKUP_APP_SLOT_ADDR, &crc_value) != FLASH_APP_OK)
+			{
+				printf("Invalid Address for CRC Calculation\r\n");
+				Error_Handler();
+			}
+			if (crc_value == curr_config.slot0_crc)
+				curr_config.slot1_crc = curr_config.slot0_crc;
 			else
 			{
-				curr_config.slot1_crc = crc_value;
-				curr_config.slot_status_flag &= ~SLOT_STATUS_FLAG_SLOT1;
+				printf("Backup copy corrupted\r\n");
+				Error_Handler();
 			}
 			// writes new config into the FLASH memory
 			if (Flash_WriteConfig(curr_config) != FLASH_APP_OK)
@@ -212,53 +206,47 @@ int main(void)
 			HAL_NVIC_SystemReset();
 		}
 	}
-	// in case invalid memory stored in FLASH
-	if (curr_config.curr_app_slot != APP_SLOT0_ADDR && curr_config.curr_app_slot != APP_SLOT1_ADDR)
-	{
-		curr_config.curr_app_slot = APP_SLOT0_ADDR;
-	}
 	// CRC tamper detection
-	uint8_t slot_crc = 0;
-	if (curr_config.curr_app_slot == APP_SLOT0_ADDR)
-	{
-		slot_crc = curr_config.slot0_crc;
-	}
-	else
-	{
-		slot_crc = curr_config.slot1_crc;
-	}
 	uint8_t crc = 0;
 	// Calculates Flash Appliction SLOT CRC for tamper detection
-	if (Flash_CalculateCRC(curr_config.curr_app_slot, &crc) != FLASH_APP_OK)
+	if (Flash_CalculateCRC(MAIN_APP_SLOT_ADDR, &crc) != FLASH_APP_OK)
 	{
 		printf("Invalid Address for CRC Calculation\r\n");
 		Error_Handler();
 	}
 	// compares calculated CRC to stored CRC
-	if (crc != slot_crc)
+	if (crc != curr_config.slot0_crc)
 	{
 		printf("TAMPER DETECTED!!!\r\n");
-		if (curr_config.curr_app_slot == APP_SLOT0_ADDR)
+		// Check Slot1 CRC and compare to stored CRC
+		if (Flash_CalculateCRC(BCKUP_APP_SLOT_ADDR, &crc) != FLASH_APP_OK)
 		{
-			curr_config.slot_status_flag |= (SLOT_STATUS_FLAG_SLOT0);
-			printf("Slot 0 CRC does not match calculated CRC\r\n");
+			printf("Invalid Address for CRC Calculation\r\n");
+			Error_Handler();
 		}
-		else
+		if (crc == curr_config.slot1_crc)
 		{
-			curr_config.slot_status_flag |= (SLOT_STATUS_FLAG_SLOT1);
-			printf("Slot 1 CRC does not match calculated CRC\r\n");
-		}
-		if ((curr_config.slot_status_flag & SLOT_STATUS_FLAG_SLOT0) == SLOT_STATUS_FLAG_VALID)
-		{
-			curr_config.curr_app_slot = APP_SLOT0_ADDR;
-			printf("Slot0 may contain valid firmware\r\n");
-			printf("Setting Slot0 as main firmware\r\n");
-		}
-		else if ((curr_config.slot_status_flag & SLOT_STATUS_FLAG_SLOT1) == SLOT_STATUS_FLAG_VALID)
-		{
-			curr_config.curr_app_slot = APP_SLOT1_ADDR;
-			printf("Slot1 may contain valid firmware\r\n");
-			printf("Setting Slot1 as main firmware\r\n");
+			printf("Backup Slot has valid firmware\r\n");
+			printf("Copying backup firmware to Main Application Slot\r\n");
+			if (Flash_CopySector(BCKUP_APP_SLOT_ADDR, MAIN_APP_SLOT_ADDR) != FLASH_APP_OK)
+			{
+				printf("Copy failed\r\n");
+				Error_Handler();
+			}
+			if (Flash_CalculateCRC(MAIN_APP_SLOT_ADDR, &crc) != FLASH_APP_OK)
+			{
+				printf("Invalid Address for CRC Calculation\r\n");
+				Error_Handler();
+			}
+			if (crc != curr_config.slot1_crc)
+			{
+				printf("Copying Corrupted\r\n");
+				Error_Handler();
+			}
+			else
+			{
+				curr_config.slot0_crc = curr_config.slot1_crc;
+			}
 		}
 		else
 		{
@@ -274,7 +262,7 @@ int main(void)
 		printf("Restarting System\r\n");
 		HAL_NVIC_SystemReset();
 	}
-	goto_application(curr_config.curr_app_slot);
+	goto_application(MAIN_APP_SLOT_ADDR);
 	/* USER CODE END 2 */
 
 	/* Infinite loop */
@@ -406,16 +394,7 @@ static void MX_GPIO_Init(void)
 /* USER CODE BEGIN 4 */
 static void goto_application(uint32_t app_base_addr)
 {
-	if (app_base_addr == APP_SLOT0_ADDR)
-	{
-		printf("Going to Slot0 firmware\r\n");
-	}
-	else
-	{
-		printf("Going to Slot1 firmware\r\n");
-	}
 	void (*app_handler)(void) = (void (*)(void))(*(volatile uint32_t *)(app_base_addr + 4));
-
 	HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, GPIO_PIN_SET);
 	HAL_Delay(500);
 	HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, GPIO_PIN_RESET);

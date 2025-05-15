@@ -6,8 +6,8 @@
 #include <stdio.h>
 
 /*@ref APP_SLOT_ADDR*/
-#define APP_SLOT0_ADDR 0x08020000U // SECTOR 5
-#define APP_SLOT1_ADDR 0x08040000U // SECTOR 6
+#define MAIN_APP_SLOT_ADDR	0x08020000U // SECTOR 5
+#define BCKUP_APP_SLOT_ADDR 0x08040000U // SECTOR 6
 
 #define APP_SLOT0_FLASH_SECTOR	FLASH_SECTOR_5
 #define APP_SLOT1_FLASH_SECTOR	FLASH_SECTOR_6
@@ -34,8 +34,7 @@ typedef struct
 	volatile uint8_t first_boot; /* @ref FIRST_BOOT_VALUES*/
 	volatile uint8_t slot0_crc;
 	volatile uint8_t slot1_crc;
-	volatile uint8_t slot_status_flag; // Bit 0: Slot0 Status Flag, Bit 1: Slot1 Status Flag.
-	volatile uint32_t curr_app_slot;   /*@ref APP_SLOT_ADDR*/
+	volatile uint8_t unused;
 } Flash_Config_t;
 
 typedef enum
@@ -77,6 +76,8 @@ Flash_Status_t Flash_WriteConfig(Flash_Config_t new_config);
  * @return Flash_Status_t
  */
 Flash_Status_t Flash_WriteData(uint32_t app_base_addr, uint8_t *data, uint16_t data_size);
+
+Flash_Status_t Flash_CopySector(uint32_t src_addr, uint32_t dest_addr);
 /**
  * @brief Calcuates CRC for Slot0(Flash Sector 5) or Slot1 (Flash Sector 6). Only
  * calculates 128KB since Sector 5 and Sector 6 are 128KB
